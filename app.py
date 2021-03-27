@@ -200,6 +200,7 @@ app.layout = dbc.Container(children=[
     [dash.dependencies.Input('query-btn', 'n_clicks')])
 def update_starting_prices_text(_):
     trade_setup.starting_parameters.query()
+    trade_setup.set_optimal_state()
     return trade_setup.starting_parameters.html_summary
 
 

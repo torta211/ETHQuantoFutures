@@ -30,11 +30,11 @@ class StartingPrices:
         self.btc_put_options = []
         for option in btc_options:
             option_name = option['instrument_name']
-            if option_name[-1] == 'C' and option['strike'] > self.btc_start_price - 5000:
+            if option_name[-1] == 'C' and option['strike'] > self.btc_start_price + 20000:
                 option_ticker = requests.get(f"https://www.deribit.com/api/v2/public/ticker?instrument_name={option_name}").json()['result']
                 option_ticker['strike'] = option['strike']
                 self.btc_call_options.append(option_ticker)
-            elif option_name[-1] == 'P' and option['strike'] < self.btc_start_price + 5000:
+            elif option_name[-1] == 'P' and option['strike'] < self.btc_start_price:
                 option_ticker = requests.get(f"https://www.deribit.com/api/v2/public/ticker?instrument_name={option_name}").json()['result']
                 option_ticker['strike'] = option['strike']
                 self.btc_put_options.append(option_ticker)
@@ -45,11 +45,11 @@ class StartingPrices:
         self.eth_put_options = []
         for option in eth_options:
             option_name = option['instrument_name']
-            if option_name[-1] == 'C' and option['strike'] > self.eth_spot_start_price - 200:
+            if option_name[-1] == 'C' and option['strike'] > self.eth_spot_start_price + 500:
                 option_ticker = requests.get(f"https://www.deribit.com/api/v2/public/ticker?instrument_name={option_name}").json()['result']
                 option_ticker['strike'] = option['strike']
                 self.eth_call_options.append(option_ticker)
-            elif option_name[-1] == 'P' and option['strike'] < self.eth_spot_start_price + 200:
+            elif option_name[-1] == 'P' and option['strike'] < self.eth_spot_start_price:
                 option_ticker = requests.get(f"https://www.deribit.com/api/v2/public/ticker?instrument_name={option_name}").json()['result']
                 option_ticker['strike'] = option['strike']
                 self.eth_put_options.append(option_ticker)
@@ -147,6 +147,23 @@ class TradeSetup:
     def set_exit_premium(self, exit_premium):
         self.exit_parameters.premium_exit = exit_premium
 
+    def calc_range_min(self, btc_prices, eth_prices):
+        self.set_exit_prices(eth_exit_price=7500, btc_exit_price=160000)
+        if self.calculate_pnl() < 0:
+            return -1e9
+        self.set_exit_prices(eth_exit_price=600, btc_exit_price=32000)
+        if self.calculate_pnl() < 0:
+            return -1e9
+
+        min_pnl = 1e9
+        for btc_price in btc_prices:
+            for eth_price in eth_prices:
+                self.set_exit_prices(eth_exit_price=eth_price, btc_exit_price=btc_price)
+                pnl = self.calculate_pnl()
+                if pnl < min_pnl:
+                    min_pnl = pnl
+        return min_pnl
+
     def calculate_pnl(self):
         eth_spot_pnl_usd = self.portfolio.eth_spot_amount * \
                            (self.exit_parameters.eth_exit_price - self.starting_parameters.eth_spot_start_price)
@@ -209,3 +226,57 @@ class TradeSetup:
     @property
     def bitmex_starting_value(self):
         return self.portfolio.btc_amount_bitmex * self.starting_parameters.btc_start_price
+
+    def set_optimal_state(self):
+        print("optimizing")
+        USD_VALUE_ETH = 10000
+        btc_prices_range = [35000 + 2500 * i for i in range(26)]
+        eth_prices_range = [1400 + 200 * i for i in range(16)]
+
+        BTC_VALUE_ETH = USD_VALUE_ETH / self.starting_parameters.btc_start_price
+        SPOT_ETH = USD_VALUE_ETH / self.starting_parameters.eth_spot_start_price
+        CONTRACTS_ETH = BTC_VALUE_ETH / \
+                        self.starting_parameters.quanto_multiplier / \
+                        self.starting_parameters.eth_quanto_futures_start_price
+
+        self.portfolio.set_eth_contracts_to_short(CONTRACTS_ETH)
+        self.portfolio.set_eth_spot_amount(SPOT_ETH)
+
+        BTC_CALL_AMOUNTS = [i / 20 * BTC_VALUE_ETH for i in range(0, 41)]
+        ETH_CALL_AMOUNTS = [i / 20 * SPOT_ETH for i in range(0, 41)]
+        BTC_PUT_AMOUNTS = [i / 20 * BTC_VALUE_ETH for i in range(0, 41)]
+        ETH_PUT_AMOUNTS = [i / 20 * SPOT_ETH for i in range(0, 41)]
+
+        cnt = 0
+        maximum_of_range_minimums = -1e9
+        optimal = []
+        for btc_call in self.starting_parameters.btc_call_options:
+            self.portfolio.btc_calls_strike = btc_call['strike']
+            self.portfolio.btc_calls_premium = btc_call['underlying_price'] * btc_call['best_ask_price']
+            for btc_call_amount in BTC_CALL_AMOUNTS:
+                self.portfolio.btc_calls_amount = btc_call_amount
+
+                for btc_put in self.starting_parameters.btc_put_options:
+                    self.portfolio.btc_puts_strike = btc_put['strike']
+                    self.portfolio.btc_puts_premium = btc_put['underlying_price'] * btc_put['best_ask_price']
+                    for btc_put_amount in BTC_PUT_AMOUNTS:
+                        self.portfolio.btc_puts_amount = btc_put_amount
+
+                        min_pnl = self.calc_range_min(btc_prices_range, eth_prices_range)
+                        if min_pnl > maximum_of_range_minimums:
+                            maximum_of_range_minimums = min_pnl
+                            print(f"new best: CALLS: {btc_call_amount} at {btc_call['strike']} + "
+                                  f"PUTS: {btc_put_amount} at {btc_put['strike']} "
+                                  f"PNL = {min_pnl}")
+                            optimal = [btc_call_amount, btc_call['strike'], btc_call['underlying_price'] * btc_call['best_ask_price'],
+                                       btc_put_amount, btc_put['strike'], btc_put['underlying_price'] * btc_put['best_ask_price']]
+                        cnt += 1
+                        if cnt % 500 == 0:
+                            print(cnt)
+
+        self.portfolio.btc_calls_amount, \
+        self.portfolio.btc_calls_strike, \
+        self.portfolio.btc_calls_premium, \
+        self.portfolio.btc_puts_amount, \
+        self.portfolio.btc_puts_strike, \
+        self.portfolio.btc_puts_premium = optimal
