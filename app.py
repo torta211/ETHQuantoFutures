@@ -32,7 +32,7 @@ row_bitcon_amount = html.Div([
         dbc.Col([
             dbc.Input(id="amount-btc-inp",
                       type="number",
-                      value=0,
+                      value=trade_setup.portfolio.btc_amount_bitmex,
                       style={'width': '150px'}),
         ], width={"order": "first"}),
         dbc.Col([
@@ -194,54 +194,54 @@ app.layout = dbc.Container(children=[
     )
 ])
 
+
 # QUERY BUTTON -> STARTING PRICES TEXT
 @app.callback(
-    dash.dependencies.Output('starting-prices', 'children'),    # this is a loading component
+    [
+        dash.dependencies.Output('starting-prices', 'children'),    # this is a loading component
+        dash.dependencies.Output('strike-btc-calls', 'options'),
+        dash.dependencies.Output('strike-eth-calls', 'options'),
+        dash.dependencies.Output('strike-btc-puts', 'options'),
+        dash.dependencies.Output('strike-eth-puts', 'options'),
+        dash.dependencies.Output('strike-btc-calls', 'value'),
+        dash.dependencies.Output('strike-eth-calls', 'value'),
+        dash.dependencies.Output('strike-btc-puts', 'value'),
+        dash.dependencies.Output('strike-eth-puts', 'value'),
+        dash.dependencies.Output('amount-eth-spot-inp', 'value'),
+        dash.dependencies.Output('amount-eth-contracts-inp', 'value'),
+        dash.dependencies.Output('amount-btc-calls-inp', 'value'),
+        dash.dependencies.Output('amount-eth-calls-inp', 'value'),
+        dash.dependencies.Output('amount-btc-puts-inp', 'value'),
+        dash.dependencies.Output('amount-eth-puts-inp', 'value')
+    ],
     [dash.dependencies.Input('query-btn', 'n_clicks')])
 def update_starting_prices_text(_):
     trade_setup.starting_parameters.query()
     trade_setup.set_optimal_state()
-    return trade_setup.starting_parameters.html_summary
 
-
-# QUERY BUTTON -> STARTING PRICES TEXT -> BTC CALLS DROPDOWN
-@app.callback(
-    dash.dependencies.Output('strike-btc-calls', 'options'),
-    [dash.dependencies.Input('starting-prices', 'children')])
-def set_possible_btc_calls(_):
-    prices = [call['strike'] for call in trade_setup.starting_parameters.btc_call_options]
+    prices = [op['strike'] for op in trade_setup.starting_parameters.btc_call_options]
     prices.sort()
-    return [{'label': pr, 'value': pr} for pr in prices]
+    btc_calls = [{'label': pr, 'value': pr} for pr in prices]
 
-
-# QUERY BUTTON -> STARTING PRICES TEXT -> ETH CALLS DROPDOWN
-@app.callback(
-    dash.dependencies.Output('strike-eth-calls', 'options'),
-    [dash.dependencies.Input('starting-prices', 'children')])
-def set_possible_eth_calls(_):
-    prices = [call['strike'] for call in trade_setup.starting_parameters.eth_call_options]
+    prices = [op['strike'] for op in trade_setup.starting_parameters.eth_call_options]
     prices.sort()
-    return [{'label': pr, 'value': pr} for pr in prices]
+    eth_calls = [{'label': pr, 'value': pr} for pr in prices]
 
-
-# QUERY BUTTON -> STARTING PRICES TEXT -> BTC PUTS DROPDOWN
-@app.callback(
-    dash.dependencies.Output('strike-btc-puts', 'options'),
-    [dash.dependencies.Input('starting-prices', 'children')])
-def set_possible_btc_puts(_):
-    prices = [call['strike'] for call in trade_setup.starting_parameters.btc_put_options]
+    prices = [op['strike'] for op in trade_setup.starting_parameters.btc_put_options]
     prices.sort()
-    return [{'label': pr, 'value': pr} for pr in prices]
+    btc_puts = [{'label': pr, 'value': pr} for pr in prices]
 
-
-# QUERY BUTTON -> STARTING PRICES TEXT -> ETH PUTS DROPDOWN
-@app.callback(
-    dash.dependencies.Output('strike-eth-puts', 'options'),
-    [dash.dependencies.Input('starting-prices', 'children')])
-def set_possible_eth_puts(_):
-    prices = [call['strike'] for call in trade_setup.starting_parameters.eth_put_options]
+    prices = [op['strike'] for op in trade_setup.starting_parameters.eth_put_options]
     prices.sort()
-    return [{'label': pr, 'value': pr} for pr in prices]
+    eth_puts = [{'label': pr, 'value': pr} for pr in prices]
+
+    return trade_setup.starting_parameters.html_summary, \
+        btc_calls, eth_calls, btc_puts, eth_puts, \
+        trade_setup.portfolio.btc_calls_strike, trade_setup.portfolio.eth_calls_strike, \
+        trade_setup.portfolio.btc_puts_strike, trade_setup.portfolio.eth_puts_strike, \
+        trade_setup.portfolio.eth_spot_amount, trade_setup.portfolio.eth_quanto_futures_contracts_shorted, \
+        trade_setup.portfolio.btc_calls_amount, trade_setup.portfolio.eth_calls_amount, \
+        trade_setup.portfolio.btc_puts_amount, trade_setup.portfolio.eth_puts_amount
 
 
 # ANY TEXT FIELD -> GRAPH
