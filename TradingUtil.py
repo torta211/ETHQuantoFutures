@@ -134,11 +134,25 @@ class Portfolio:
         self.eth_quanto_futures_contracts_shorted = amount
 
 
+class OptimizationTarget:
+    btc_prices_range = [35000 + 4000 * i for i in range(21)]
+    eth_prices_range = [1400 + 200 * i for i in range(16)]
+    num_points_in_range = len(btc_prices_range) * len(eth_prices_range)
+    cant_lose_prices = [
+        {'eth': 600, 'btc': 26000},
+        {'eth': 4800, 'btc': 165000},
+        {'eth': 2500, 'btc': 11000},
+    ]
+
+
 class TradeSetup:
+    USD_VALUE_ETH = 10000
+
     def __init__(self):
         self.starting_parameters = StartingPrices()
         self.exit_parameters = ExitPrices()
         self.portfolio = Portfolio()
+        self.optimization_target = OptimizationTarget()
 
     def set_exit_prices(self, eth_exit_price, btc_exit_price):
         self.exit_parameters.eth_exit_price = eth_exit_price
@@ -147,22 +161,33 @@ class TradeSetup:
     def set_exit_premium(self, exit_premium):
         self.exit_parameters.premium_exit = exit_premium
 
-    def calc_range_min(self, btc_prices, eth_prices):
-        self.set_exit_prices(eth_exit_price=7500, btc_exit_price=160000)
-        if self.calculate_pnl() < 0:
-            return -1e9
-        self.set_exit_prices(eth_exit_price=600, btc_exit_price=32000)
-        if self.calculate_pnl() < 0:
-            return -1e9
+    def calc_range_min(self):
+        for critical_point in self.optimization_target.cant_lose_prices:
+            self.set_exit_prices(eth_exit_price=critical_point['eth'], btc_exit_price=critical_point['btc'])
+            if self.calculate_pnl() < 0:
+                return -1e9
 
         min_pnl = 1e9
-        for btc_price in btc_prices:
-            for eth_price in eth_prices:
+        for btc_price in self.optimization_target.btc_prices_range:
+            for eth_price in self.optimization_target.eth_prices_range:
                 self.set_exit_prices(eth_exit_price=eth_price, btc_exit_price=btc_price)
                 pnl = self.calculate_pnl()
                 if pnl < min_pnl:
                     min_pnl = pnl
         return min_pnl
+
+    def calc_range_avg(self):
+        for critical_point in self.optimization_target.cant_lose_prices:
+            self.set_exit_prices(eth_exit_price=critical_point['eth'], btc_exit_price=critical_point['btc'])
+            if self.calculate_pnl() < 0:
+                return -1e9
+
+        pnl_sum = 0
+        for btc_price in self.optimization_target.btc_prices_range:
+            for eth_price in self.optimization_target.eth_prices_range:
+                self.set_exit_prices(eth_exit_price=eth_price, btc_exit_price=btc_price)
+                pnl_sum += self.calculate_pnl()
+        return pnl_sum / self.optimization_target.num_points_in_range
 
     def calculate_pnl(self):
         eth_spot_pnl_usd = self.portfolio.eth_spot_amount * \
@@ -173,26 +198,23 @@ class TradeSetup:
                                      (eth_quanto_futures_price_movement * -1 * self.starting_parameters.quanto_multiplier)
         eth_quanto_futres_pnl_usd = eth_quanto_futures_pnl_btc * self.exit_parameters.btc_exit_price
 
-        # we assume the btc holding on bitmex to be fully hedged at start, so that contributes 0
-
-        # calculate the profit of the CALLS
-        calls_profit = 0
+        options_profit = 0
         if self.exit_parameters.eth_exit_price > self.portfolio.eth_calls_strike:
-            calls_profit += self.portfolio.eth_calls_amount * \
+            options_profit += self.portfolio.eth_calls_amount * \
                             (self.exit_parameters.eth_exit_price - self.portfolio.eth_calls_strike)
         if self.exit_parameters.btc_exit_price > self.portfolio.btc_calls_strike:
-            calls_profit += self.portfolio.btc_calls_amount * \
+            options_profit += self.portfolio.btc_calls_amount * \
                             (self.exit_parameters.btc_exit_price - self.portfolio.btc_calls_strike)
 
-        # calculate the profit of the PUTS
-        puts_profit = 0
         if self.exit_parameters.eth_exit_price < self.portfolio.eth_puts_strike:
-            puts_profit += self.portfolio.eth_puts_amount * \
+            options_profit += self.portfolio.eth_puts_amount * \
                             (self.portfolio.eth_puts_strike - self.exit_parameters.eth_exit_price)
         if self.exit_parameters.btc_exit_price < self.portfolio.btc_puts_strike:
-            puts_profit += self.portfolio.btc_puts_amount * \
+            options_profit += self.portfolio.btc_puts_amount * \
                             (self.portfolio.btc_puts_strike - self.exit_parameters.btc_exit_price)
-        return eth_spot_pnl_usd + eth_quanto_futres_pnl_usd + calls_profit - self.portfolio.cost_of_calls + puts_profit - self.portfolio.cost_of_puts
+
+        # we assume the btc holding on bitmex to be fully hedged at start, so that contributes 0
+        return eth_spot_pnl_usd + eth_quanto_futres_pnl_usd + options_profit - self.portfolio.cost_of_calls - self.portfolio.cost_of_puts
 
     def calculate_bitmex_eth_liq_price(self, for_btc_price):
         # lost_BTC = contracts * price_move * multiplier
@@ -204,7 +226,6 @@ class TradeSetup:
                    (btc_available / self.starting_parameters.quanto_multiplier / self.portfolio.eth_quanto_futures_contracts_shorted)
         except ZeroDivisionError:
             return 1000000
-
 
     @property
     def eth_spot_value(self):
@@ -229,12 +250,9 @@ class TradeSetup:
 
     def set_optimal_state(self):
         print("optimizing")
-        USD_VALUE_ETH = 10000
-        btc_prices_range = [35000 + 2500 * i for i in range(26)]
-        eth_prices_range = [1400 + 200 * i for i in range(16)]
 
-        BTC_VALUE_ETH = USD_VALUE_ETH / self.starting_parameters.btc_start_price
-        SPOT_ETH = round(USD_VALUE_ETH / self.starting_parameters.eth_spot_start_price, 2)
+        BTC_VALUE_ETH = self.USD_VALUE_ETH / self.starting_parameters.btc_start_price
+        SPOT_ETH = round(self.USD_VALUE_ETH / self.starting_parameters.eth_spot_start_price, 2)
         CONTRACTS_ETH = round(BTC_VALUE_ETH /
                               self.starting_parameters.quanto_multiplier /
                               self.starting_parameters.eth_quanto_futures_start_price)
@@ -251,7 +269,7 @@ class TradeSetup:
         iters = len(BTC_CALL_AMOUNTS) * len(ETH_CALL_AMOUNTS) * len(BTC_PUT_AMOUNTS) * len(ETH_PUT_AMOUNTS) * \
             len(self.starting_parameters.btc_call_options) * len(self.starting_parameters.btc_put_options) * \
             len(self.starting_parameters.eth_call_options) * len(self.starting_parameters.eth_put_options)
-        maximum_of_range_minimums = -1e9
+        best_result = -1e9
         optimal = []
         for btc_call in self.starting_parameters.btc_call_options:
             self.portfolio.btc_calls_strike = btc_call['strike']
@@ -277,14 +295,14 @@ class TradeSetup:
                                     for eth_put_amount in ETH_PUT_AMOUNTS:
                                         self.portfolio.eth_puts_amount = eth_put_amount
 
-                                        min_pnl_of_range = self.calc_range_min(btc_prices_range, eth_prices_range)
-                                        if min_pnl_of_range > maximum_of_range_minimums:
-                                            maximum_of_range_minimums = min_pnl_of_range
+                                        result_of_range = self.calc_range_min()
+                                        if result_of_range > best_result:
+                                            best_result = result_of_range
                                             print(f"\rnew best: BTC CALLS: {btc_call_amount} at {btc_call['strike']} + "
                                                   f"BTC PUTS: {btc_put_amount} at {btc_put['strike']} +"
                                                   f"ETH CALLS: {eth_call_amount} at {eth_call['strike']} +"
                                                   f"ETH PUTS: {eth_put_amount} at {eth_put['strike']} "
-                                                  f"PNL = {min_pnl_of_range}")
+                                                  f"PNL = {result_of_range}")
                                             optimal = [btc_call_amount, btc_call['strike'], btc_call['underlying_price'] * btc_call['best_ask_price'],
                                                        btc_put_amount, btc_put['strike'], btc_put['underlying_price'] * btc_put['best_ask_price'],
                                                        eth_call_amount, eth_call['strike'], eth_call['underlying_price'] * eth_call['best_ask_price'],

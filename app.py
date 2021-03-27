@@ -207,6 +207,7 @@ app.layout = dbc.Container(children=[
         dash.dependencies.Output('strike-eth-calls', 'value'),
         dash.dependencies.Output('strike-btc-puts', 'value'),
         dash.dependencies.Output('strike-eth-puts', 'value'),
+        dash.dependencies.Output('amount-btc-inp', 'value'),
         dash.dependencies.Output('amount-eth-spot-inp', 'value'),
         dash.dependencies.Output('amount-eth-contracts-inp', 'value'),
         dash.dependencies.Output('amount-btc-calls-inp', 'value'),
@@ -239,7 +240,9 @@ def update_starting_prices_text(_):
         btc_calls, eth_calls, btc_puts, eth_puts, \
         trade_setup.portfolio.btc_calls_strike, trade_setup.portfolio.eth_calls_strike, \
         trade_setup.portfolio.btc_puts_strike, trade_setup.portfolio.eth_puts_strike, \
-        trade_setup.portfolio.eth_spot_amount, trade_setup.portfolio.eth_quanto_futures_contracts_shorted, \
+        trade_setup.portfolio.btc_amount_bitmex, \
+        trade_setup.portfolio.eth_spot_amount, \
+        trade_setup.portfolio.eth_quanto_futures_contracts_shorted, \
         trade_setup.portfolio.btc_calls_amount, trade_setup.portfolio.eth_calls_amount, \
         trade_setup.portfolio.btc_puts_amount, trade_setup.portfolio.eth_puts_amount
 
@@ -383,6 +386,13 @@ def build_plot(resolution=100, btc_max=200000, eth_max=10000):
                              x=[btc_prices[0], btc_prices[-1]],
                              line=dict(color='black')))
     fig.add_trace(go.Scatter(x=btc_prices, y=liq_prices, line=dict(color="red"), name="BitMEX liquidation"))
+    fig.add_trace(go.Scatter(x=[trade_setup.optimization_target.btc_prices_range[0], trade_setup.optimization_target.btc_prices_range[-1],
+                                trade_setup.optimization_target.btc_prices_range[-1], trade_setup.optimization_target.btc_prices_range[0],
+                                trade_setup.optimization_target.btc_prices_range[0]],
+                             y=[trade_setup.optimization_target.eth_prices_range[0], trade_setup.optimization_target.eth_prices_range[0],
+                                trade_setup.optimization_target.eth_prices_range[-1], trade_setup.optimization_target.eth_prices_range[-1],
+                                trade_setup.optimization_target.eth_prices_range[0]],
+                             line=dict(color="blue"), name="Optimized range"))
     fig.update_xaxes(range=[btc_prices[0], btc_prices[-1]])
     fig.update_yaxes(range=[eth_prices[0], eth_prices[-1]])
     return fig
