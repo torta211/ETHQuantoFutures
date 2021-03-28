@@ -6,7 +6,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from ETHQuantoFutures.TradingUtil import TradeSetup
 
-
+n_clicks_optimize = 0
 trade_setup = TradeSetup()
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -171,6 +171,13 @@ app.layout = dbc.Container(children=[
     html.Br(),
     row_eth_spot_amount,
     html.Br(),
+    html.Button('Optimize options', id="optimize-btn"),
+    dcc.Loading(
+        id="loading-optimize",
+        fullscreen=True,
+        children=html.P(children="", id="optimize-output", style=dict(display='none'))
+    ),
+    html.Br(),
     row_btc_calls,
     html.Br(),
     row_eth_calls,
@@ -215,27 +222,27 @@ app.layout = dbc.Container(children=[
         dash.dependencies.Output('amount-btc-puts-inp', 'value'),
         dash.dependencies.Output('amount-eth-puts-inp', 'value')
     ],
-    [dash.dependencies.Input('query-btn', 'n_clicks')])
-def update_starting_prices_text(_):
-    trade_setup.starting_parameters.query()
-    trade_setup.set_optimal_state()
-
+    [dash.dependencies.Input('query-btn', 'n_clicks'),
+     dash.dependencies.Input('optimize-output', 'children')])
+def on_query(_, hidden_text):
+    global n_clicks_optimize
+    if str(n_clicks_optimize + 1) == hidden_text:
+        n_clicks_optimize += 1
+    else:
+        trade_setup.starting_parameters.query()
+        trade_setup.set_default_state()
     prices = [op['strike'] for op in trade_setup.starting_parameters.btc_call_options]
     prices.sort()
     btc_calls = [{'label': pr, 'value': pr} for pr in prices]
-
     prices = [op['strike'] for op in trade_setup.starting_parameters.eth_call_options]
     prices.sort()
     eth_calls = [{'label': pr, 'value': pr} for pr in prices]
-
     prices = [op['strike'] for op in trade_setup.starting_parameters.btc_put_options]
     prices.sort()
     btc_puts = [{'label': pr, 'value': pr} for pr in prices]
-
     prices = [op['strike'] for op in trade_setup.starting_parameters.eth_put_options]
     prices.sort()
     eth_puts = [{'label': pr, 'value': pr} for pr in prices]
-
     return trade_setup.starting_parameters.html_summary, \
         btc_calls, eth_calls, btc_puts, eth_puts, \
         trade_setup.portfolio.btc_calls_strike, trade_setup.portfolio.eth_calls_strike, \
@@ -245,6 +252,17 @@ def update_starting_prices_text(_):
         trade_setup.portfolio.eth_quanto_futures_contracts_shorted, \
         trade_setup.portfolio.btc_calls_amount, trade_setup.portfolio.eth_calls_amount, \
         trade_setup.portfolio.btc_puts_amount, trade_setup.portfolio.eth_puts_amount
+
+
+# OPTIMIZE BUTTON -> OPTIONS INPUTS
+@app.callback(
+    dash.dependencies.Output('optimize-output', 'children'),    # this is a loading component
+    [dash.dependencies.Input('optimize-btn', 'n_clicks')])
+def on_optimize(n_clicks):
+    if n_clicks is not None:
+        trade_setup.set_optimal_state()
+        return f"{n_clicks}"
+    return "init"
 
 
 # ANY TEXT FIELD -> GRAPH

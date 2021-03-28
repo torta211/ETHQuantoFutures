@@ -248,6 +248,29 @@ class TradeSetup:
     def bitmex_starting_value(self):
         return self.portfolio.btc_amount_bitmex * self.starting_parameters.btc_start_price
 
+    def set_default_state(self):
+        BTC_VALUE_ETH = self.USD_VALUE_ETH / self.starting_parameters.btc_start_price
+        SPOT_ETH = round(self.USD_VALUE_ETH / self.starting_parameters.eth_spot_start_price, 2)
+        CONTRACTS_ETH = round(BTC_VALUE_ETH /
+                              self.starting_parameters.quanto_multiplier /
+                              self.starting_parameters.eth_quanto_futures_start_price)
+
+        self.portfolio.set_eth_contracts_to_short(CONTRACTS_ETH)
+        self.portfolio.set_eth_spot_amount(SPOT_ETH)
+
+        btc_call = self.starting_parameters.btc_call_options[0]
+        btc_put = self.starting_parameters.btc_put_options[0]
+        eth_call = self.starting_parameters.eth_call_options[0]
+        eth_put = self.starting_parameters.eth_put_options[0]
+        self.portfolio.btc_calls_strike = btc_call['strike']
+        self.portfolio.btc_calls_premium = btc_call['underlying_price'] * btc_call['best_ask_price']
+        self.portfolio.btc_puts_strike = btc_put['strike']
+        self.portfolio.btc_puts_premium = btc_put['underlying_price'] * btc_put['best_ask_price']
+        self.portfolio.eth_calls_strike = eth_call['strike']
+        self.portfolio.eth_calls_premium = eth_call['underlying_price'] * eth_call['best_ask_price']
+        self.portfolio.eth_puts_strike = eth_put['strike']
+        self.portfolio.eth_puts_premium = eth_put['underlying_price'] * eth_put['best_ask_price']
+
     def set_optimal_state(self):
         print("optimizing")
 
